@@ -490,10 +490,8 @@ export function getDimensionOverviewRoutes(route: 'overview' | 'chart' | 'chart-
       let filterCategory = category;
       if (!filterCategory) filterCategory = DefaultAdapterTypeCategoryMap[adaptorType];
       
-      let routeFileExt = '';
-      if (route === 'overview') routeFileExt = '';
-      else routeFileExt += route;
-      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}-${routeFileExt}`;
+      const routeFileExt = route === 'overview' ? '' : `-${route}`;
+      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}${routeFileExt}`;
       const routeFile = `dimensions/${routeSubPath}`; 
       
       const data = await readRouteData(routeFile);
@@ -541,10 +539,8 @@ export function getDimensionChainRoutes(route: 'overview' | 'chart' | 'chart-pro
       let filterCategory = category;
       if (!filterCategory) filterCategory = DefaultAdapterTypeCategoryMap[adaptorType];
       
-      let routeFileExt = '';
-      if (route === 'overview') routeFileExt = '';
-      else routeFileExt += route;
-      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}-chain/${chainKeyFilter}-${routeFileExt}`;
+      const routeFileExt = route === 'overview' ? '' : `-${route}`;
+      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}-chain/${chainKeyFilter}${routeFileExt}`;
       const routeFile = `dimensions/${routeSubPath}`;
       
       const data = await readRouteData(routeFile);
@@ -562,10 +558,8 @@ export function getDimensionCategoryRoutes(route: 'overview' | 'chart' | 'chart-
 
     if (!category) return errorResponse(res, 'Category not supported', { statusCode: 400 })
     
-    let routeFileExt = '';
-    if (route === 'overview') routeFileExt = '';
-    else routeFileExt += route;
-    const routeSubPath = `${adaptorType}/${dataType}-category/${category}-${routeFileExt}`;
+    const routeFileExt = route === 'overview' ? '' : `-${route}`;
+    const routeSubPath = `${adaptorType}/${dataType}-category/${category}${routeFileExt}`;
     const routeFile = `dimensions/${routeSubPath}`; 
     
     const data = await readRouteData(routeFile);
@@ -582,10 +576,8 @@ export function getDimensionCategoryChainRoutes(route: 'overview' | 'chart' | 'c
 
     if (!category) return errorResponse(res, 'Category not supported', { statusCode: 400 })
     
-    let routeFileExt = '';
-    if (route === 'overview') routeFileExt = '';
-    else routeFileExt += route;
-    const routeSubPath = `${adaptorType}/${dataType}-category/${category}-chain/${chainKeyFilter}-${routeFileExt}`;
+    const routeFileExt = route === 'overview' ? '' : `-${route}`;
+    const routeSubPath = `${adaptorType}/${dataType}-category/${category}-chain/${chainKeyFilter}${routeFileExt}`;
     const routeFile = `dimensions/${routeSubPath}`; 
     
     const data = await readRouteData(routeFile);
@@ -593,6 +585,51 @@ export function getDimensionCategoryChainRoutes(route: 'overview' | 'chart' | 'c
     if (!data) return errorResponse(res, 'Internal server error', { statusCode: 500 });
 
     return successResponse(res, data);
+  }
+}
+
+/**
+ * GET /v2/overview/dimension-categories
+ * Returns aggregated dimension metrics across all categories.
+ * Shape: { [category]: { chains: {...}, [adapterType]: { [recordType]: { '24h', '7d', '30d' } } } }
+ */
+export async function getDimensionCategoriesOverview(_req: HyperExpress.Request, res: HyperExpress.Response) {
+  const data = await readRouteData('dimensions/category-agg-data');
+  if (!data) return errorResponse(res, 'Category data not available', { statusCode: 500 });
+  return successResponse(res, data);
+}
+
+/**
+ * GET /v2/metrics/:type/categories
+ * Returns the list of available categories for a specific adapter type,
+ * along with their aggregate metrics (24h, 7d, 30d).
+ */
+export function getDimensionCategoryMetricsByType() {
+  return async function (req: HyperExpress.Request, res: HyperExpress.Response) {
+    const { adaptorType, dataType } = getEventParameters(req, true);
+
+    // Read the full category aggregate data
+    const categoryAggData = await readRouteData('dimensions/category-agg-data');
+    if (!categoryAggData) return errorResponse(res, 'Category data not available', { statusCode: 500 });
+
+    // Filter to only categories that have data for this adapter type and record type
+    const result: any = {};
+    for (const [category, categoryData] of Object.entries(categoryAggData as any)) {
+      const adapterData = categoryData?.[adaptorType];
+      if (!adapterData) continue;
+
+      const recordData = adapterData[dataType];
+      if (!recordData) continue;
+
+      result[category] = {
+        ...recordData,
+        chains: categoryData.chains ? Object.keys(categoryData.chains).filter((chain: string) => {
+          return categoryData.chains[chain]?.[adaptorType]?.[dataType];
+        }) : [],
+      };
+    }
+
+    return successResponse(res, result);
   }
 }
 
