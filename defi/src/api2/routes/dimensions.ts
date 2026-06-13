@@ -559,8 +559,10 @@ export function getDimensionChainRoutes(route: 'overview' | 'chart' | 'chart-pro
       let filterCategory = category;
       if (!filterCategory) filterCategory = DefaultAdapterTypeCategoryMap[adaptorType];
       
-      const routeFileExt = route === 'overview' ? '' : `-${route}`;
-      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}-chain/${chainKeyFilter}${routeFileExt}`;
+      let routeFileExt = '';
+      if (route === 'overview') routeFileExt = '';
+      else routeFileExt += route;
+      const routeSubPath = `${adaptorType}/${dataType}-category/${filterCategory}-chain/${chainKeyFilter}-${routeFileExt}`;
       const routeFile = `dimensions/${routeSubPath}`;
       return fileResponse(routeFile, res)
     }
@@ -598,47 +600,39 @@ export function getDimensionCategoryChainRoutes(route: 'overview' | 'chart' | 'c
 }
 
 /**
- * GET /v2/overview/dimension-categories
- * Returns aggregated dimension metrics across all categories.
- * Shape: { [category]: { chains: {...}, [adapterType]: { [recordType]: { '24h', '7d', '30d' } } } }
- */
-export async function getDimensionCategoriesOverview(_req: HyperExpress.Request, res: HyperExpress.Response) {
-  const data = await readRouteData('dimensions/category-agg-data');
-  if (!data) return errorResponse(res, 'Category data not available', { statusCode: 500 });
-  return successResponse(res, data);
-}
-
-/**
  * GET /v2/metrics/:type/categories
- * Returns the list of available categories for a specific adapter type,
- * along with their aggregate metrics (24h, 7d, 30d).
+ * Returns the list of categories that have data for a given adapter type,
+ * each with its aggregate metrics and the chains it is active on.
  */
 export function getDimensionCategoryMetricsByType() {
   return async function (req: HyperExpress.Request, res: HyperExpress.Response) {
     const { adaptorType, dataType } = getEventParameters(req, true);
 
-    // Read the full category aggregate data
     const categoryAggData = await readRouteData('dimensions/category-agg-data');
     if (!categoryAggData) return errorResponse(res, 'Category data not available', { statusCode: 500 });
 
-    // Filter to only categories that have data for this adapter type and record type
-    const result: any = {};
-    for (const [category, categoryData] of Object.entries(categoryAggData as any)) {
-      const adapterData = categoryData?.[adaptorType];
-      if (!adapterData) continue;
-
-      const recordData = adapterData[dataType];
+    // keep only categories that have data for this adapter type and record type
+    const categories: any[] = [];
+    for (const [category, categoryData] of Object.entries<any>(categoryAggData)) {
+      const recordData = categoryData?.[adaptorType]?.[dataType];
       if (!recordData) continue;
 
-      result[category] = {
-        ...recordData,
-        chains: categoryData.chains ? Object.keys(categoryData.chains).filter((chain: string) => {
-          return categoryData.chains[chain]?.[adaptorType]?.[dataType];
-        }) : [],
-      };
+      const chains = categoryData.chains
+        ? Object.keys(categoryData.chains)
+          .filter((chain: string) => categoryData.chains[chain]?.[adaptorType]?.[dataType])
+          .map(getChainLabelFromKey)
+        : [];
+
+      categories.push({
+        category,
+        total24h: recordData['24h'],
+        total7d: recordData['7d'],
+        total30d: recordData['30d'],
+        chains,
+      });
     }
 
-    return successResponse(res, result);
+    return successResponse(res, categories);
   }
 }
 
